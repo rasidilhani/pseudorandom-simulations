@@ -1,0 +1,202 @@
+---
+title: "pseudorandom"
+output: html_document
+date: "2024-06-19"
+---
+
+```{r cars}
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("statcomp")
+library(statcomp)
+library(readxl)
+install.packages("ggplot2")
+library(ggplot2)
+```
+
+
+````{r}
+set.seed(123)  # Set seed for reproducibility
+
+# Parameters
+num_sequences <- 100
+sequence_length <- 100
+i_values <- c(1, 9, 50)
+
+# Initialize a list to store the sequences
+ensemble <- list()
+
+# Generate the sequences
+for (i in i_values) {
+  for (j in 1:num_sequences) {
+    sequence_name <- paste("seq_i", i, "num", j, sep = "_")
+    ensemble[[sequence_name]] <- sample(0:i, sequence_length, replace = TRUE)
+  }
+}
+
+# Function to create a plot for a given sequence
+plot_sequence <- function(sequence, i) {
+  df <- data.frame(Index = 1:length(sequence), Value = sequence)
+  p <- ggplot(df, aes(x = Index, y = Value)) +
+    geom_line(color = "blue") +
+    ggtitle(paste("Sequence with i =", i)) +
+    xlab("t") +
+    ylab("x_t") +
+    theme_minimal()
+  return(p)
+}
+
+# Plot the sequences for i = 1, 9, 50
+plot_list <- list()
+for (i in i_values) {
+  sequence_name <- paste("seq_i", i, "num_1", sep = "_")
+  plot_list[[sequence_name]] <- plot_sequence(ensemble[[sequence_name]], i)
+}
+
+# Display the plots
+for (plot_name in names(plot_list)) {
+  print(plot_list[[plot_name]])
+}
+
+
+````
+
+```{r}
+
+# Function to calculate shannon entropy
+calculate_permutation_entropy <- function(probabilities) {
+  entropy <- -sum(probabilities * log2(probabilities), na.rm = TRUE)
+  return(entropy)
+}
+
+#Function for KL divergence
+kl_divergence <- function(P, Q) {
+  divergence <- sum(P * log2(P / Q), na.rm = TRUE)
+  return(divergence)
+}
+
+# Function for Jensen Shannon entropy
+js_divergence <- function(P, Q) {
+  M <- 0.5 * (P + Q)
+  jsd <- 0.5 * kl_divergence(P, M) + 0.5 * kl_divergence(Q, M)
+  return(jsd)
+}
+
+# Function to calculate Jensen-Shannon
+calculate_js_entropy <- function(probabilities) {
+  uniform_prob <- rep(1 / length(probabilities), length(probabilities))
+  jsd <- js_divergence(probabilities, uniform_prob)
+  js_entropy <- sqrt(jsd)
+  return(js_entropy)
+}
+
+# Function for plot frequencies and ordinal pattern histogram
+plot_frequencies <- function(freq_df, title_text) {
+  ggplot(freq_df, aes(x = factor(Pattern, levels = c("123", "132", "213", "231", "312", "321")), y = Probability)) +
+    geom_bar(stat = "identity", fill = "gray40", color = "black", width = 0.7) +
+    xlab("pattern") +
+    ylab(expression(P(Π))) +
+    ggtitle(title_text) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 1),
+      axis.text.y = element_text(size = 12),
+      axis.title.y = element_text(size = 14),
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    ) +
+    ylim(0, 0.3)
+}
+
+# Function to calculate ordinal patterns from embedding dimension 
+compute_ordinal_patterns <- function(series, emb_dim) {
+  n <- length(series)
+  patterns <- vector("list", n - emb_dim + 1)
+  
+  for (i in 1:(n - emb_dim + 1)) {
+    subseries <- series[i:(i + emb_dim - 1)]
+    patterns[[i]] <- order(subseries)
+  }
+  
+  return(patterns)
+}
+
+# Função para encontrar a frequência de cada padrão ordinal
+ordinal_pattern_frequencies <- function(series, emb_dim) {
+  patterns <- compute_ordinal_patterns(series, emb_dim)
+  patterns_str <- sapply(patterns, paste, collapse = "")
+  freq_table <- table(patterns_str)
+  
+  # Converter a tabela de frequências em um data frame para melhor legibilidade
+  freq_df <- as.data.frame(freq_table)
+  colnames(freq_df) <- c("Pattern", "Frequency")
+  
+  return(freq_df)
+}
+
+# Função para calcular as probabilidades a partir das frequências
+calculate_probabilities <- function(freq_df) {
+  total_patterns <- sum(freq_df$Frequency)
+  probabilities <- freq_df$Frequency / total_patterns
+  freq_df$Probability <- probabilities
+  return(freq_df)
+}
+
+# Carregar dados
+CAC <- read_excel("CAC.xlsx")
+series <- CAC[[2]]  # Supondo que a segunda coluna contém a série
+timestamp <- CAC[[1]]  # Supondo que a primeira coluna contém os timestamps
+
+# Plotar a série temporal de consumo de eletricidade para o ano de 2009
+plot(CAC$TIMESTAMP, CAC$VALUE, type = "l",
+     main = "Year 2009 Electricity Consumption at Central Area Thailand",
+     xlab = "Month", ylab = "Electricity Demand")
+
+# Definir as dimensões de embedding
+embedding_dimensions <- 3
+
+# Títulos específicos das figuras a), b), c) e d)
+titles <- c("Complete", "Time Ordered", "Random", "Data-Driven")
+
+# Função para obter a série temporal modificada conforme necessário
+get_modified_series <- function(series, method) {
+  if (method == "Complete") {
+    return(series)
+  } else if (method == "Time Ordered") {
+    return(series)  # Ordenar conforme necessário
+  } else if (method == "Random") {
+    set.seed(123)
+    return(sample(series))
+  } else if (method == "Data-Driven") {
+    return(series)  # Modificar conforme necessário
+  }
+}
+
+# Calcular e plotar para cada título específico das figuras a), b), c) e d)
+for (i in 1:4) {
+  method <- titles[i]
+  modified_series <- get_modified_series(series, method)
+  
+  pattern_frequencies <- ordinal_pattern_frequencies(modified_series, embedding_dimensions)
+  probabilities_df <- calculate_probabilities(pattern_frequencies)
+  probabilities <- probabilities_df$Probability
+  shannon_entropy <- calculate_permutation_entropy(probabilities)
+  js_entropy <- calculate_js_entropy(probabilities)
+  
+  complexity_results[[as.character(embedding_dimensions)]] <- data.frame(
+    EmbeddingDimension = embedding_dimensions,
+    PermutationEntropy = shannon_entropy,
+    JensenShannonEntropy = js_entropy
+  )
+  
+  print(paste("Embedding Dimension:", embedding_dimensions))
+  print(paste("Permutation Entropy:", shannon_entropy))
+  print(paste("Jensen-Shannon Entropy:", js_entropy))
+  
+  # Plotar frequências para a dimensão embedding atual com o título específico
+  print(plot_frequencies(probabilities_df, method))
+}
+
+
+```
